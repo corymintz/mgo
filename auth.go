@@ -33,7 +33,7 @@ import (
 	"fmt"
 	"sync"
 
-	"gopkg.in/mgo.v2/bson"
+	"./bson"
 )
 
 type authCmd struct {
