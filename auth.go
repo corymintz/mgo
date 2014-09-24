@@ -44,6 +44,12 @@ type authCmd struct {
 	Key   string
 }
 
+type x509AuthCmd struct {
+	Authenticate int
+	Mechanism    string
+	User         string
+}
+
 type startSaslCmd struct {
 	StartSASL int `bson:"startSasl"`
 }
@@ -181,8 +187,8 @@ func (socket *mongoSocket) Login(cred Credential) error {
 		err = socket.loginClassic(cred)
 	case "PLAIN":
 		err = socket.loginPlain(cred)
-	case "MONGO-X509":
-		err = fmt.Errorf("unsupported authentication mechanism: %s", cred.Mechanism)
+	case "MONGODB-X509":
+		err = socket.loginX509(cred)
 	default:
 		// Try SASL for everything else, if it is available.
 		err = socket.loginSASL(cred)
@@ -232,6 +238,21 @@ func (socket *mongoSocket) loginClassic(cred Credential) error {
 
 func (socket *mongoSocket) loginPlain(cred Credential) error {
 	cmd := saslCmd{Start: 1, Mechanism: "PLAIN", Payload: []byte("\x00" + cred.Username + "\x00" + cred.Password)}
+	res := authResult{}
+	return socket.loginRun(cred.Source, &cmd, &res, func() error {
+		if !res.Ok {
+			return errors.New(res.ErrMsg)
+		}
+		socket.Lock()
+		socket.dropAuth(cred.Source)
+		socket.creds = append(socket.creds, cred)
+		socket.Unlock()
+		return nil
+	})
+}
+
+func (socket *mongoSocket) loginX509(cred Credential) error {
+	cmd := x509AuthCmd{Authenticate: 1, Mechanism: "MONGODB-X509", User: cred.Username}
 	res := authResult{}
 	return socket.loginRun(cred.Source, &cmd, &res, func() error {
 		if !res.Ok {
